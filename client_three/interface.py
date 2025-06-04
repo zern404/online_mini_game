@@ -1,9 +1,13 @@
 import customtkinter as ctk
 import json
 import os
+import queue
+from client import Client
+from game import Game
 from threading import Thread as t
 
 LOGIN_DATA_PATH = "client_three/configure/login_data.json"
+status_queue = queue.Queue()
 
 class MainMenu(ctk.CTk):
     def __init__(self):
@@ -16,15 +20,18 @@ class MainMenu(ctk.CTk):
         self.resizable(False, False)
 
         self.threads = []
+        self.cl = Client()
 
         self.main_frame = ctk.CTkFrame(self, width=600, height=500)
         self.main_frame.pack(fill="both", expand=True)
 
         if os.path.exists(LOGIN_DATA_PATH):
+            start_client_thread = t(target=self.cl.connect_server, args=(self.read_login_data()), daemon=True)
+            self.threads.append(start_client_thread), start_client_thread.start()
             self.draw_menu()
         else:
             self.draw_login()
-    
+
     def draw_login(self):
         self.login_lable = ctk.CTkLabel(self.main_frame, text="Login", font=("Bold", 50))
         
@@ -70,12 +77,23 @@ class MainMenu(ctk.CTk):
                 self.draw_menu()
         except Exception as e:
             print(f"Error in login: {e}")
-            
+
+    def read_login_data(self):
+        try:
+            with open(LOGIN_DATA_PATH, "r", encoding="utf-8") as f:
+                login_data = json.load(f)
+            return login_data
+        except Exception as e:
+            print(f"Error reading JSON: {e}")
+            return False
 
     def handle_singlplayer(self):
-        pass
+        self.destroy()
+        self.cl.stop_client()
+        self.game = Game(self.cl).start_singlplayer()
 
     def handle_online(self):
-        pass
+        self.destroy()
+        self.game = Game(self.cl, False).start_multiplayer()
 
 MainMenu().mainloop()

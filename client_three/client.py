@@ -1,98 +1,68 @@
-import socket 
-from threading import Thread as t
-import logging as logs
-import queue as q
-import colorama
+import socket
 import time
-import json 
+import queue
+from threading import Thread as t
 
-IP, PORT = "localhost", 7000
-LOGIN_DATA = {
-    "login": "admin",
-    "password": "admin",
-    "public_key": "ggvp"
-}
+IP, PORT = "localhost", 6000
 
+command_queue = queue.Queue()
+data_queue = queue.Queue()
 
 class Client:
-    def __init__(self, ip, port):
-        self.ip = ip 
-        self.port = port 
+    def __init__(self, ip=IP, port=PORT):
+        self.ip = ip
+        self.port = port
+
+        self.s = None
+        self._running = True
+        self._tryconnect= True
 
         self.threads = []
-        self.login_data_json = json.dumps(LOGIN_DATA)
 
-        self.sock = None
-        self.queue = q.Queue()
-
-        self.try_conn = True 
-        self.listen = True
-
-    def stop(self):
-        logs.warning("Client close!")
-        self.try_conn = False
-        self.listen = False
-        self.threads.clear()
-
-    def connect(self) -> bool:
-        self.sock = None
-        while self.try_conn:
-            try:
-
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as self.sock:
-                    self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    self.sock.connect((self.ip, self.port))
-                    
-                    logs.info("Sending user-data to sign")
-                    self.sock.sendall(self.login_data_json.encode())
-                    
-                    logs.info(f"Connected: {self.ip}:{self.port}")
-                    self.handle_server()
-
-                    return True
-
-            except Exception as e:
-                logs.debug(f"Try connect... {e}")
-                time.sleep(1)
-    
-    def send_to_server(self, data) -> bool:
+    def send_msg(self, data):
         try:
-            byte_data = data.encode()
-            self.sock.sendall(byte_data)
-            logs.debug(f"Msg to server: {data}")
-            return True
+            self.s.sendall(data.encode())
         except Exception as e:
-            logs.error(f"Sending: {data} not succeful: {e}")
-            return False
+            print(f"Error in send_msg: {e}")
+
+    def stop_client(self):
+        self.threads.clear()
+        self._running = False
+        self._tryconnect = False
+        self.s = None
 
     def handle_server(self):
+        print("Connected")
         try:
-            while self.listen:
-                data = self.sock.recv(1024)
-                decode_data = data.decode('utf-8', errors="ignore").strip()
-                
-                self.queue.put(decode_data)
-                logs.debug(f"Msg from server: {decode_data}")
-
-                if decode_data == "exit":
-                    logs.warning("EXIT")
-                    send_thread = t(target=self.send_to_server, args=("off",), daemon=True)
-                    self.threads.append(send_thread), send_thread.start()
-                    self.stop()
-                elif decode_data == "*/*signed*/*":
-                    logs.info("You sign to app")
-                elif decode_data == "*/*registered*/*":
-                    logs.info("You registered to app")
-
+            while self._running:
+                byte_data = self.s.recv(4096)
+                if byte_data:
+                    decode_data = byte_data.decode()
+                    if "cmd" in decode_data:
+                        command_queue.put(decode_data.replace("cmd", "").strip())
+                    else:
+                        data_queue.put(decode_data)
+                    print(decode_data)
         except Exception as e:
-            logs.error(f"Handle server: {e}")
+            print(f"Error in handle server: {e}")
         finally:
-            self.connect()
+            print("Connection lost. Attempting to reconnect...")
+            self._running = False
+            self.connect_server()
 
+    def connect_server(self, login_data):
+        while self._tryconnect:
+            try:
+                if self.s:
+                    self.s.close()
+                self.s = None
 
-def main():
-    logs.basicConfig(level=logs.DEBUG, format='%(levelname)s: %(message)s')
-    Client(IP, PORT).connect()
-
-if __name__ == "__main__":
-    main()
+                self.s = socket.socket()
+                self.s.connect((self.ip, self.port))
+                self.s.sendall(login_data)
+                self.handle_server()    
+            except Exception as e:
+                print(f"Error in connect to server: {e}")
+            finally:
+                print("Try connect...")
+                time.sleep(1)
