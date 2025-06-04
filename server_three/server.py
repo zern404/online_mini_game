@@ -1,4 +1,5 @@
 import socket
+import json
 from threading import Thread as t
 
 IP, PORT = "localhost", 6000
@@ -23,9 +24,14 @@ class Server:
         except Exception as e:
             print(f"Error in sendmsg: {e}")
 
-    def handle_client(self, conn, addr):
+    def handle_client(self, conn, addr, login_data: dict):
         print(f"Connected {addr}")
-        client = {"addr": addr, "conn": conn}
+
+        client = {"addr": addr, "conn": conn, "login": login_data["login"], "password": login_data["password"]}
+        if self.check_client_online(client):
+            conn.close()
+            return
+        
         self.clients.append(client)
         try:
             with conn:
@@ -44,7 +50,7 @@ class Server:
 
     def check_client_online(self, client) -> bool:
         for c in self.clients:
-            if c["addr"] == client["addr"]:
+            if c["addr"] == client["addr"] and c["login"] == client["login"]:
                 return True
         return False
 
@@ -65,7 +71,20 @@ class Server:
                 while self._running:
                     conn, addr = self.s.accept()
 
-                    thread_handle = t(target=self.handle_client, args=(conn, addr), daemon=True)
+                    try:
+                        login_data = conn.recv(1024)
+                        if not login_data:
+                            print(f"No login data received from {addr}. Disconnect")
+                            conn.close()
+                            continue
+            
+                        login_data = json.loads(login_data.decode())
+                    except Exception as e:
+                        print(f"Invalid login data from {addr}. Disconnect")
+                        conn.close()
+                        continue
+
+                    thread_handle = t(target=self.handle_client, args=(conn, addr, login_data), daemon=True)
                     self.threads.append(thread_handle), thread_handle.start()
 
         except Exception as e:

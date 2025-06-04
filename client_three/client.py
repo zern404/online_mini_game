@@ -13,6 +13,8 @@ class Client:
         self.ip = ip
         self.port = port
 
+        self.login_data = None
+
         self.s = None
         self._running = True
         self._tryconnect= True
@@ -36,6 +38,10 @@ class Client:
         try:
             while self._running:
                 byte_data = self.s.recv(4096)
+                
+                if not byte_data:
+                    break
+
                 if byte_data:
                     decode_data = byte_data.decode()
                     if "cmd" in decode_data:
@@ -46,11 +52,13 @@ class Client:
         except Exception as e:
             print(f"Error in handle server: {e}")
         finally:
-            print("Connection lost. Attempting to reconnect...")
+            print("Connection lost. Reconnect...")
             self._running = False
-            self.connect_server()
+            command_queue.put("disconnected")
 
-    def connect_server(self, login_data):
+    def connect_server(self, login_data=None):
+        if login_data:
+            self.login_data = login_data
         while self._tryconnect:
             try:
                 if self.s:
@@ -59,7 +67,10 @@ class Client:
 
                 self.s = socket.socket()
                 self.s.connect((self.ip, self.port))
-                self.s.sendall(login_data)
+                self.s.sendall(self.login_data)
+
+                command_queue.put("connected")
+            
                 self.handle_server()    
             except Exception as e:
                 print(f"Error in connect to server: {e}")
