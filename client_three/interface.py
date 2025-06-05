@@ -29,6 +29,7 @@ class MainMenu(ctk.CTk):
         self.threads.append(check_thread), check_thread.start()
 
         self.main_frame = ctk.CTkFrame(self, width=600, height=500)
+        self.conn_lable = ctk.CTkLabel(self.main_frame, text="🔴 Not connected 🔴", font=("Bold", 30)) 
         self.main_frame.pack(fill="both", expand=True)
 
         self.start()
@@ -50,25 +51,22 @@ class MainMenu(ctk.CTk):
                     command = command_queue.get(timeout=1)
                     if command == "connected":
                         self.status_connect = True
+                        self.conn_lable.configure(text="✅ Connected ✅")
                     elif command == "disconnected":
                         self.status_connect = False
-                        """
-                        start_client_thread = t(target=self.cl.connect_server, args=(self.byte_login_data,), daemon=True)
-                        self.threads.append(start_client_thread), start_client_thread.start()
-                        """
+                        self.conn_lable.configure(text="🔴 Not connected 🔴")
                 except queue.Empty:
                     pass
                 try:
                     interface_command = interface_queue.get(timeout=1)
                     if interface_command == "restart":
                         self.cl.stop_client()
+                        self.main_frame.destroy()
                         self.start()
                 except queue.Empty:
                     pass
             except Exception as e:
                 print(f"Error in check status {e}")
-            finally:
-                time.sleep(1)
 
     def draw_login(self):
         self.login_lable = ctk.CTkLabel(self.main_frame, text="Login", font=("Bold", 50))
@@ -93,6 +91,7 @@ class MainMenu(ctk.CTk):
         self.menu_lable.pack(padx=10, pady=40, side="top")
         self.single_btn.pack(padx=10, pady=10, side="top")
         self.online_btn.pack(padx=10, pady=10, side="top")
+        self.conn_lable.pack(padx=10, pady=20, side="top")
     
     def clear_main_frame(self):
         self.main_frame.destroy()
@@ -132,7 +131,7 @@ class MainMenu(ctk.CTk):
         self.game = Game(self.cl).start_singlplayer()
 
     def handle_online(self):
-
+        #self.destroy()
         if self.status_connect:
             self.game = Game(self.cl, False).start_multiplayer()
 

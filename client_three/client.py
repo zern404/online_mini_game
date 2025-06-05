@@ -52,8 +52,7 @@ class Client:
         except Exception as e:
             print(f"Error in handle server: {e}")
         finally:
-            print("Connection lost. Reconnect...")
-            self._running = False
+            print("Connection lost.")
             command_queue.put("disconnected")
 
     def connect_server(self, login_data=None):

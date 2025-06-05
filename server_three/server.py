@@ -81,6 +81,7 @@ class Server:
                         login_data = json.loads(login_data.decode())
                     except Exception as e:
                         print(f"Invalid login data from {addr}. Disconnect")
+                        conn.sendall("Invalid login data!".encode())
                         conn.close()
                         continue
 
