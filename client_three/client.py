@@ -1,12 +1,14 @@
 import socket
 import time
 import queue
+from functools import wraps
 from threading import Thread as t
 
-IP, PORT = "localhost", 6000
+IP, PORT = "est-bits.gl.at.ply.gg", 3636
 
 command_queue = queue.Queue()
 data_queue = queue.Queue()
+ping_queue = queue.Queue()
 
 class Client:
     def __init__(self, ip=IP, port=PORT):
@@ -21,6 +23,42 @@ class Client:
 
         self.threads = []
 
+    def __new_thread(self, func, *args, **kwargs):
+        thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
+        self.threads.append(thread)
+        thread.start()
+    
+    def __kill_threads(self):
+        for thread in self.threads:
+            if thread.is_alive():
+                if not thread.daemon:
+                    thread.join(timeout=2)  
+        self.threads.clear()
+
+    def ping_timer(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start = time.time()
+            result = func(*args, **kwargs)
+            ping = int((time.time() - start) * 1000)
+            if result:
+                print(f"Ping: {ping} ms")
+                return ping
+            else:
+                return None
+        return wrapper
+
+    @ping_timer
+    def ping(self):
+        self.send_msg("ping")
+        try:
+            pong = ping_queue.get(timeout=3)
+            if pong == "pong":
+                return True
+        except Exception as e:
+            print(f"Ping error: {e}")
+        return False
+
     def send_msg(self, data):
         try:
             self.s.sendall(data.encode())
@@ -28,13 +66,12 @@ class Client:
             print(f"Error in send_msg: {e}")
 
     def stop_client(self):
-        self.threads.clear()
+        self.__kill_threads()
         self._running = False
         self._tryconnect = False
         self.s = None
 
     def handle_server(self):
-        print("Connected")
         try:
             while self._running:
                 byte_data = self.s.recv(4096)
@@ -46,6 +83,10 @@ class Client:
                     decode_data = byte_data.decode()
                     if "cmd" in decode_data:
                         command_queue.put(decode_data.replace("cmd", "").strip())
+                    elif "connected" in decode_data:
+                        command_queue.put("connected")
+                    elif "pong" in decode_data:
+                        ping_queue.put("pong")
                     else:
                         data_queue.put(decode_data)
                     print(decode_data)
@@ -67,8 +108,6 @@ class Client:
                 self.s = socket.socket()
                 self.s.connect((self.ip, self.port))
                 self.s.sendall(self.login_data)
-
-                command_queue.put("connected")
             
                 self.handle_server()    
             except Exception as e:

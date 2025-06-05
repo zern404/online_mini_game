@@ -15,6 +15,18 @@ class Server:
         self.threads = []
         self.clients = []
 
+    def __new_thread(self, func, *args, **kwargs):
+        thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
+        self.threads.append(thread)
+        thread.start()
+    
+    def __kill_threads(self):
+        for thread in self.threads:
+            if thread.is_alive():
+                if not thread.daemon:
+                    thread.join(timeout=1)  
+        self.threads.clear()
+
     def send_msg(self, client, data) -> bool:
         try:
             if self.check_client_online(client):
@@ -31,15 +43,19 @@ class Server:
         if self.check_client_online(client):
             conn.close()
             return
-        
+        conn.sendall("connected".encode())
         self.clients.append(client)
         try:
             with conn:
                 while True:
                     byte_data = conn.recv(4096)
+                    decode_data = byte_data.decode()
+
                     if not byte_data:
                         break
-                    decode_data = byte_data.decode()
+                    
+                    if decode_data == "ping":
+                        conn.sendall("pong".encode())
                     print(decode_data)
         except Exception as e:
             print(f"Error in handle client: {e}")
@@ -56,7 +72,7 @@ class Server:
 
     def stop_server(self):
         self.clients.clear()
-        self.threads.clear()
+        self.__kill_threads()
         self._running = False
         self.s = None
 
@@ -84,9 +100,8 @@ class Server:
                         conn.sendall("Invalid login data!".encode())
                         conn.close()
                         continue
-
-                    thread_handle = t(target=self.handle_client, args=(conn, addr, login_data), daemon=True)
-                    self.threads.append(thread_handle), thread_handle.start()
+                    
+                    self.__new_thread(self.handle_client, conn, addr, login_data)
 
         except Exception as e:
             print(f"Error in start_server: {e}") 

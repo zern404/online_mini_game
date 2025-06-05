@@ -5,8 +5,9 @@ class Game:
     WIDTH, HEIGHT = 800, 800
     x, y = WIDTH // 2, HEIGHT // 2
     speed = 4
-    def __init__(self, client, singlplayer=True):
+    def __init__(self, client, interface, singlplayer=True):
         self.client = client
+        self.interface = interface
 
         pygame.init()
         pygame.display.set_caption("Game")
@@ -15,7 +16,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.singlplayer = singlplayer
         self.running = True
-    
+
     def start_singlplayer(self):
         try:
             while self.running:
