@@ -1,6 +1,7 @@
 import socket
 import time
 import queue
+import json
 from functools import wraps
 from threading import Thread as t
 
@@ -59,9 +60,13 @@ class Client:
             print(f"Ping error: {e}")
         return False
 
-    def send_msg(self, data):
+    def send_msg(self, data, _json=False):
         try:
-            self.s.sendall(data.encode())
+            if _json:
+                json_byte_data = json.dumps(data)
+                self.s.sendall(json_byte_data.encode())
+            else:
+                self.s.sendall(data.encode())
         except Exception as e:
             print(f"Error in send_msg: {e}")
 
@@ -88,8 +93,8 @@ class Client:
                     elif "pong" in decode_data:
                         ping_queue.put("pong")
                     else:
-                        data_queue.put(decode_data)
-                    print(decode_data)
+                        print(decode_data)
+                        data_queue.put(json.loads(decode_data))
         except Exception as e:
             print(f"Error in handle server: {e}")
         finally:

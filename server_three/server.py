@@ -27,6 +27,11 @@ class Server:
                     thread.join(timeout=1)  
         self.threads.clear()
 
+    def resend_data(self, client, data):
+        for cl in self.clients:
+            if cl["login"] != client["login"]:
+                cl["conn"].sendall(data)
+
     def send_msg(self, client, data) -> bool:
         try:
             if self.check_client_online(client):
@@ -56,6 +61,8 @@ class Server:
                     
                     if decode_data == "ping":
                         conn.sendall("pong".encode())
+                    else:
+                        self.resend_data(client, byte_data)
                     print(decode_data)
         except Exception as e:
             print(f"Error in handle client: {e}")

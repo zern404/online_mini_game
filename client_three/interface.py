@@ -21,7 +21,10 @@ class MainMenu(ctk.CTk):
 
         self.threads = []
         self.status_connect = False
+
         self.status_ping_pong = False
+        self.ping_ms = None
+
         self.byte_login_data = self.read_login_data()
 
         self.cl = Client()
@@ -123,6 +126,7 @@ class MainMenu(ctk.CTk):
         if self.status_connect:
             ping = self.cl.ping() 
             if ping is not None:
+                self.ping_ms = ping
                 self.status_ping_pong = True
                 if ping >= 120:
                     self.ping_label.configure(text_color="yellow", text=f"Ping: {ping} ms")
@@ -156,13 +160,18 @@ class MainMenu(ctk.CTk):
             print(f"Error in login: {e}")
 
     def handle_singlplayer(self):
-        self.destroy()
-        self.cl.stop_client()
-        self.game = Game(self.cl, self).start_singlplayer()
+        if self.status_connect:
+            self.destroy()
+            self.game = Game(self.cl, self, False).run()
 
     def handle_online(self):
         if self.status_connect:
-            #self.destroy()
-            self.game = Game(self.cl, self, False).start_multiplayer()
+            self.withdraw()
+            game_thread = t(target=self.start_game, daemon=True)
+            game_thread.start()
+
+    def start_game(self):
+        self.game = Game(self.cl, self, False)
+        self.game.run()
 
 MainMenu().mainloop()
