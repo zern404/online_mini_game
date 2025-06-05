@@ -4,7 +4,7 @@ import queue
 from functools import wraps
 from threading import Thread as t
 
-IP, PORT = "est-bits.gl.at.ply.gg", 3636
+IP, PORT = "localhost", 6000
 
 command_queue = queue.Queue()
 data_queue = queue.Queue()
