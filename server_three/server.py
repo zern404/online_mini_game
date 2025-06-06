@@ -1,8 +1,12 @@
 import socket
 import json
+import queue
 from threading import Thread as t
 
 IP, PORT = "localhost", 6000
+
+command_queue = queue.Queue()
+data_queue = queue.Queue()
 
 class Server:
     def __init__(self, ip=IP, port=PORT):
@@ -14,6 +18,7 @@ class Server:
 
         self.threads = []
         self.clients = []
+        self.rooms = []
 
     def __new_thread(self, func, *args, **kwargs):
         thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
@@ -27,10 +32,55 @@ class Server:
                     thread.join(timeout=1)  
         self.threads.clear()
 
+    def search_room(self, client):
+        for room in self.rooms:
+            if client["login"] in room["name"]:
+                return room
+        return False
+    
+    def remove_room(self, client) -> bool:
+        try:
+            room = self.search_room(client)
+            if room:
+                room["conn1"].sendall("room closed".encode())
+                room["conn2"].sendall("room closed".encode())
+                self.rooms.remove(room)
+                return True
+            return False
+        except Exception as e:
+            print(f"Error in remove room {e}")
+
+    def create_room(self, client):
+        if self.check_client_online(client):
+            for cl in self.clients:
+                if cl["login"] != client["login"] and cl["in_room"] != True:
+                    room = {"name": f"{client["login"]}|{cl["login"]}", "conn1": client["conn"], "conn2": cl["conn"]}   
+                    self.rooms.append(room)
+
+                    cl["in_room"] = True
+
+                    client["conn"].sendall(f"room found! Enemy:{cl["login"]}".encode())
+                    print(f"created: {room}")
+                    return True
+        return False
+
     def resend_data(self, client, data):
-        for cl in self.clients:
-            if cl["login"] != client["login"]:
-                cl["conn"].sendall(data)
+        try:
+            if self.check_client_online(client):
+                room = self.search_room(client)
+                if room:
+                    if room["conn1"] != client["conn"]:
+                        room["conn1"].sendall(data)
+                        print(room["conn1"], data.decode())
+                    else:
+                        room["conn2"].sendall(data)
+                        print(room["conn2"], data.decode())
+                else:
+                    client["conn"].sendall("room not found".encode())
+            else:
+                self.remove_room(client)
+        except Exception as e:
+            print(f"Error in resend: {e}")
 
     def send_msg(self, client, data) -> bool:
         try:
@@ -42,9 +92,9 @@ class Server:
             print(f"Error in sendmsg: {e}")
 
     def handle_client(self, conn, addr, login_data: dict):
-        print(f"Connected {addr}")
+        print(f"Connected {addr}:{login_data["login"]}")
 
-        client = {"addr": addr, "conn": conn, "login": login_data["login"], "password": login_data["password"]}
+        client = {"addr": addr, "conn": conn, "in_room": False, "login": login_data["login"], "password": login_data["password"]}
         if self.check_client_online(client):
             conn.close()
             return
@@ -61,13 +111,25 @@ class Server:
                     
                     if decode_data == "ping":
                         conn.sendall("pong".encode())
+
+                    elif decode_data == "remove room":
+                        self.remove_room(client)
+
+                    elif decode_data == "new room":
+                        room = self.create_room(client)
+                        if room and client["in_room"] != True:
+                            client["in_room"] = True
+                    elif decode_data == "ready":
+                        room_check = self.search_room(client)
+                        if room_check:
+                            conn.sendall("start game".encode())
                     else:
-                        self.resend_data(client, byte_data)
-                    print(decode_data)
+                        if client["in_room"] == True:
+                            self.resend_data(client, byte_data)
         except Exception as e:
             print(f"Error in handle client: {e}")
         finally:
-            print(f"Client disconnected: {addr}")
+            print(f"Client disconnected: {addr}:{client["login"]}")
             if client in self.clients:
                 self.clients.remove(client)
 

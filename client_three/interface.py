@@ -67,6 +67,10 @@ class MainMenu(ctk.CTk):
                     if command == "connected":
                         self.status_connect = True
                         self.conn_lable.configure(text_color="green", text="✅ Connected ✅")
+                    elif "room found" in command:
+                        interface_queue.put(command)
+                    elif command == "start game":
+                        interface_queue.put(command)
                     elif command == "disconnected":
                         self.status_connect = False
                         self.conn_lable.configure(text_color="red", text="🔴 Not connected 🔴")
@@ -166,12 +170,23 @@ class MainMenu(ctk.CTk):
 
     def handle_online(self):
         if self.status_connect:
-            self.withdraw()
             game_thread = t(target=self.start_game, daemon=True)
             game_thread.start()
 
     def start_game(self):
-        self.game = Game(self.cl, self, False)
-        self.game.run()
-
+        self.cl.send_msg("new room")
+        self.menu_lable.configure(text="Search room...")
+        while True:
+            try:
+                room_status = interface_queue.get(timeout=0.5)
+                if room_status == "start game":
+                    self.withdraw()
+                    self.game = Game(self.cl, self, False)
+                    self.game.run()
+                elif room_status == "room found":
+                    self.cl.send_msg("ready")
+                    self.menu_lable.configure(text_color="green", text="Room found, wait a start game.")
+            except queue.Empty:
+                pass
+        
 MainMenu().mainloop()

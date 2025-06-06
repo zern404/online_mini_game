@@ -131,7 +131,7 @@ class Game:
         self.player = Player(self.WIDTH / 2, 100)
         self.enemy = Player(self.WIDTH / 2, 700 - 100, color=(200, 0, 0))
 
-        self.__new_thread(self.update_data)
+        #self.__new_thread(self.update_data)
 
     def __new_thread(self, func, *args, **kwargs):
         thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
@@ -141,7 +141,7 @@ class Game:
     def update_data(self):
         while True:
             try:
-                data = data_queue.get()
+                data = data_queue.get_nowait()
                 if data:
                     self.enemy.x = data["x"]
                     self.enemy.y = data["y"]
@@ -195,6 +195,8 @@ class Game:
                         self.running = False
 
                 self.screen.fill((30, 30, 30))
+
+                self.update_data()
                 
                 if self.player.health > 0:
                     self.draw_self()

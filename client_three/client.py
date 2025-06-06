@@ -92,6 +92,10 @@ class Client:
                         command_queue.put("connected")
                     elif "pong" in decode_data:
                         ping_queue.put("pong")
+                    elif "room found!" in decode_data:
+                        command_queue.put(decode_data)
+                    elif "start game" in decode_data:
+                        command_queue.put(decode_data)
                     else:
                         print(decode_data)
                         data_queue.put(json.loads(decode_data))
