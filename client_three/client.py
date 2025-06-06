@@ -24,6 +24,8 @@ class Client:
 
         self.threads = []
 
+        self._json_buffer = ""
+
     def __new_thread(self, func, *args, **kwargs):
         thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
         self.threads.append(thread)
@@ -63,7 +65,7 @@ class Client:
     def send_msg(self, data, _json=False):
         try:
             if _json:
-                json_byte_data = json.dumps(data)
+                json_byte_data = json.dumps(data) + "\n"
                 self.s.sendall(json_byte_data.encode())
             else:
                 self.s.sendall(data.encode())
@@ -93,12 +95,19 @@ class Client:
                     elif "pong" in decode_data:
                         ping_queue.put("pong")
                     elif "room found!" in decode_data:
-                        command_queue.put(decode_data)
+                        self.send_msg("ready")
                     elif "start game" in decode_data:
                         command_queue.put(decode_data)
                     else:
-                        print(decode_data)
-                        data_queue.put(json.loads(decode_data))
+                        self._json_buffer += decode_data
+                        while "\n" in self._json_buffer:
+                            line, self._json_buffer = self._json_buffer.split("\n", 1)
+                            if line.strip():
+                                try:
+                                    data_queue.put(json.loads(line))
+                                except Exception as e:
+                                    print(f"decode error: {e}")
+                    print(decode_data)
         except Exception as e:
             print(f"Error in handle server: {e}")
         finally:
@@ -114,7 +123,7 @@ class Client:
                     self.s.close()
                 self.s = None
 
-                self.s = socket.socket()
+                self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.s.connect((self.ip, self.port))
                 self.s.sendall(self.login_data)
             

@@ -176,17 +176,13 @@ class MainMenu(ctk.CTk):
     def start_game(self):
         self.cl.send_msg("new room")
         self.menu_lable.configure(text="Search room...")
-        while True:
-            try:
-                room_status = interface_queue.get(timeout=0.5)
-                if room_status == "start game":
-                    self.withdraw()
-                    self.game = Game(self.cl, self, False)
-                    self.game.run()
-                elif room_status == "room found":
-                    self.cl.send_msg("ready")
-                    self.menu_lable.configure(text_color="green", text="Room found, wait a start game.")
-            except queue.Empty:
-                pass
+        try:
+            room_status = command_queue.get()
+            if "start game" in room_status:
+                self.withdraw()
+                self.game = Game(self.cl, self, False)
+                self.game.run()
+        except queue.Empty:
+            pass
         
 MainMenu().mainloop()

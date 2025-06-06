@@ -124,6 +124,7 @@ class Game:
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
         self.clock = pygame.time.Clock()
         self.running = True
+        self.first_start = True
         
         self.threads = []
 
@@ -131,12 +132,21 @@ class Game:
         self.player = Player(self.WIDTH / 2, 100)
         self.enemy = Player(self.WIDTH / 2, 700 - 100, color=(200, 0, 0))
 
-        #self.__new_thread(self.update_data)
+        #self.__new_thread(self.send_game_data)
+        self.__new_thread(self.update_data)
 
     def __new_thread(self, func, *args, **kwargs):
         thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
         self.threads.append(thread)
         thread.start()
+    
+    def send_game_data(self):
+        while self.running:
+            try:
+                data = game_data_queue.get(timeout=1)
+                self.client.send_msg(data, True)
+            except queue.Empty:
+                pass
 
     def update_data(self):
         while True:
@@ -195,8 +205,6 @@ class Game:
                         self.running = False
 
                 self.screen.fill((30, 30, 30))
-
-                self.update_data()
                 
                 if self.player.health > 0:
                     self.draw_self()
@@ -218,6 +226,7 @@ class Game:
         except Exception as e:
             print(f"Error in game: {e}")
         finally:
+            self.client.send_msg("remove room")
             self.interface.deiconify()
             pygame.quit()
             sys.exit()

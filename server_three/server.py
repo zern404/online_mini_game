@@ -45,22 +45,29 @@ class Server:
                 room["conn1"].sendall("room closed".encode())
                 room["conn2"].sendall("room closed".encode())
                 self.rooms.remove(room)
+                print(f"Room: {room["name"]} has removed")
                 return True
             return False
         except Exception as e:
             print(f"Error in remove room {e}")
 
     def create_room(self, client):
-        if self.check_client_online(client):
+        print("Create")
+        client = self.check_client_online(client, True)
+        if client:
             for cl in self.clients:
-                if cl["login"] != client["login"] and cl["in_room"] != True:
+                if cl["login"] != client["login"] and cl["in_room"] != True and cl["wait_room"] == True:
+                    cl["wait_room"] = False
+                    cl["in_room"] = True
+                    client["wait_room"] = False
+                    client["in_room"] = True   
+
                     room = {"name": f"{client["login"]}|{cl["login"]}", "conn1": client["conn"], "conn2": cl["conn"]}   
                     self.rooms.append(room)
 
-                    cl["in_room"] = True
-
-                    client["conn"].sendall(f"room found! Enemy:{cl["login"]}".encode())
-                    print(f"created: {room}")
+                    client["conn"].sendall(f"room found! Enemy:{cl['login']}".encode())
+                    cl["conn"].sendall(f"room found! Enemy:{client['login']}".encode())
+                    print(f"created: {room['name']}")
                     return True
         return False
 
@@ -71,10 +78,8 @@ class Server:
                 if room:
                     if room["conn1"] != client["conn"]:
                         room["conn1"].sendall(data)
-                        print(room["conn1"], data.decode())
                     else:
                         room["conn2"].sendall(data)
-                        print(room["conn2"], data.decode())
                 else:
                     client["conn"].sendall("room not found".encode())
             else:
@@ -94,15 +99,15 @@ class Server:
     def handle_client(self, conn, addr, login_data: dict):
         print(f"Connected {addr}:{login_data["login"]}")
 
-        client = {"addr": addr, "conn": conn, "in_room": False, "login": login_data["login"], "password": login_data["password"]}
-        if self.check_client_online(client):
-            conn.close()
-            return
+        client = {"addr": addr, "conn": conn, "in_room": False, "wait_room": False, "login": login_data["login"], "password": login_data["password"]}
+        
         conn.sendall("connected".encode())
         self.clients.append(client)
+
         try:
             with conn:
                 while True:
+                    client = self.check_client_online(client, True)
                     byte_data = conn.recv(4096)
                     decode_data = byte_data.decode()
 
@@ -116,16 +121,21 @@ class Server:
                         self.remove_room(client)
 
                     elif decode_data == "new room":
-                        room = self.create_room(client)
-                        if room and client["in_room"] != True:
-                            client["in_room"] = True
-                    elif decode_data == "ready":
+                        if not client["in_room"]:
+                            client["wait_room"] = True
+                            for cl in self.clients:
+                                if cl["wait_room"] and not cl["in_room"]:
+                                    self.create_room(cl)
+
+                    elif "ready" in decode_data:
                         room_check = self.search_room(client)
                         if room_check:
                             conn.sendall("start game".encode())
+
                     else:
                         if client["in_room"] == True:
                             self.resend_data(client, byte_data)
+                    print(decode_data)
         except Exception as e:
             print(f"Error in handle client: {e}")
         finally:
@@ -133,9 +143,11 @@ class Server:
             if client in self.clients:
                 self.clients.remove(client)
 
-    def check_client_online(self, client) -> bool:
+    def check_client_online(self, client, get=False) -> bool:
         for c in self.clients:
             if c["addr"] == client["addr"] and c["login"] == client["login"]:
+                if get:
+                    return c
                 return True
         return False
 
@@ -148,29 +160,32 @@ class Server:
     def start_server(self):
         try:
 
-            self.s = socket.socket()
-            with self.s:
-                self.s.bind((self.ip, self.port))
-                self.s.listen(100)
-                print(f"Server started: {self.ip}:{self.port}")
-                while self._running:
-                    conn, addr = self.s.accept()
+            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.s.bind((self.ip, self.port))
+            self.s.listen(100)
+            print(f"Server started: {self.ip}:{self.port}")
+            while self._running:
+                conn, addr = self.s.accept()
 
-                    try:
-                        login_data = conn.recv(1024)
-                        if not login_data:
-                            print(f"No login data received from {addr}. Disconnect")
-                            conn.close()
-                            continue
-            
-                        login_data = json.loads(login_data.decode())
-                    except Exception as e:
-                        print(f"Invalid login data from {addr}. Disconnect")
-                        conn.sendall("Invalid login data!".encode())
+                try:
+                    login_data = conn.recv(1024)
+                    if not login_data:
+                        print(f"No login data received from {addr}. Disconnect")
                         conn.close()
                         continue
-                    
-                    self.__new_thread(self.handle_client, conn, addr, login_data)
+        
+                    login_data = json.loads(login_data.decode())
+
+                    for i in self.clients:
+                        if i["login"] == login_data["login"]:
+                            conn.close()
+                except Exception as e:
+                    print(f"Invalid login data from {addr}. Disconnect")
+                    conn.sendall("Invalid login data!".encode())
+                    conn.close()
+                    continue
+                
+                self.__new_thread(self.handle_client, conn, addr, login_data)
 
         except Exception as e:
             print(f"Error in start_server: {e}") 
