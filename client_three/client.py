@@ -107,7 +107,7 @@ class Client:
                                     data_queue.put(json.loads(line))
                                 except Exception as e:
                                     print(f"decode error: {e}")
-                    print(decode_data)
+                        
         except Exception as e:
             print(f"Error in handle server: {e}")
         finally:

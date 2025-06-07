@@ -42,10 +42,23 @@ class Server:
         try:
             room = self.search_room(client)
             if room:
-                room["conn1"].sendall("room closed".encode())
-                room["conn2"].sendall("room closed".encode())
-                self.rooms.remove(room)
-                print(f"Room: {room["name"]} has removed")
+                clients = room["name"].split("|")
+
+                client1 = next((c for c in self.clients if c["login"] == clients[0]), None)
+                if client1:
+                    client1["in_room"] = False
+                    client1["wait_room"] = True
+                    room["conn1"].sendall("room closed".encode())
+
+                client2 = next((c for c in self.clients if c["login"] == clients[1]), None)
+                if client2:
+                    client2["in_room"] = False
+                    client2["wait_room"] = True
+                    room["conn2"].sendall("room closed".encode())
+                                
+                self.rooms.remove(room)    
+                print(f"Room: {room["name"]} has removed")\
+                
                 return True
             return False
         except Exception as e:
@@ -67,7 +80,7 @@ class Server:
 
                     client["conn"].sendall(f"room found! Enemy:{cl['login']}".encode())
                     cl["conn"].sendall(f"room found! Enemy:{client['login']}".encode())
-                    print(f"created: {room['name']}")
+                    print(f"Room created: {room['name']}")
                     return True
         return False
 
@@ -135,12 +148,15 @@ class Server:
                     else:
                         if client["in_room"] == True:
                             self.resend_data(client, byte_data)
-                    print(decode_data)
         except Exception as e:
             print(f"Error in handle client: {e}")
         finally:
             print(f"Client disconnected: {addr}:{client["login"]}")
             if client in self.clients:
+                if client["in_room"]:
+                    room = self.search_room(client)
+                    if room:
+                        self.remove_room(client)
                 self.clients.remove(client)
 
     def check_client_online(self, client, get=False) -> bool:
