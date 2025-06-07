@@ -96,6 +96,8 @@ class Client:
                         ping_queue.put("pong")
                     elif "room found!" in decode_data:
                         self.send_msg("ready")
+                    elif "room found!" in decode_data:
+                        self.send_msg("ready")
                     elif "start game" in decode_data:
                         command_queue.put(decode_data)
                     else:

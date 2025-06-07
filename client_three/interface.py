@@ -163,8 +163,9 @@ class MainMenu(ctk.CTk):
 
     def handle_singlplayer(self):
         if self.status_connect:
-            self.destroy()
-            self.game = Game(self.cl, self, False).run()
+            pass
+            #self.destroy()
+            #self.game = Game(self.cl, self, False).run()
 
     def handle_online(self):
         if self.status_connect:
@@ -178,6 +179,9 @@ class MainMenu(ctk.CTk):
         self.withdraw()
         self.game = Game(self.cl, self, False)
         self.game.run()
+        self.game.stop_game()
+        self.g = Game(self.cl, self, False)
+        self.g.run()
 
 
 MainMenu().mainloop()

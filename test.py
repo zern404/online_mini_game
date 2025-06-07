@@ -74,8 +74,8 @@ class Player:
 
         if keys[pygame.K_SPACE]:
             if not self.space_pressed:
-                self.space_pressed = True
                 self.shoot(bullets)
+                self.space_pressed = True
         else:
             self.space_pressed = False
 
@@ -130,13 +130,16 @@ class Game:
         self.clock = pygame.time.Clock()
 
         self.running = True
-        self.end_game = False
-
+        self.first_start = True
+        
         self.threads = []
         self.last_data = None
 
+        self.end_game = False
+
         self.bullets = []
         self.enemy_bullets = []
+        self.enemy_last_shot = False 
 
         self.damage_bullet = 10
 
@@ -144,6 +147,8 @@ class Game:
         self.enemy = Player(self.WIDTH / 2, 700 - 100, color=(200, 0, 0))
 
         self.__new_thread(self.update_data)
+
+        self.send_queue = queue.Queue(maxsize=5)
         self.__new_thread(self.send_game_data)
 
     def __new_thread(self, func, *args, **kwargs):
@@ -153,22 +158,20 @@ class Game:
     
     def send_game_data(self):
         while self.running:
-            if self.last_data is not None:
-                try:
-                    if "room closed" in self.last_data:
-                        self.stop_game()
-                        break
-                    self.client.send_msg(self.last_data, True)
-                except Exception as e:
-                    print(f"Send data error: {e}")
-            time.sleep(1/60) 
+            try:
+                data = self.send_queue.get(timeout=0.05)
+                self.client.send_msg(data, True)
+            except queue.Empty:
+                pass
 
     def update_data(self):
+        self.enemy_last_shot = False
         while True:
             try:
                 data = data_queue.get_nowait()
                 if data:
                     if "room closed" in data:
+                        self.end_game = True
                         self.stop_game()
                         break
                     else:
@@ -177,9 +180,10 @@ class Game:
                         self.player.health = data["health"]
 
                         shoot_event = data.get("shoot_event", False)
-                        if shoot_event:
+                        if shoot_event and not self.enemy_last_shot:
                             angle = data.get("shoot_angle", 0)
                             self.enemy_bullets.append(Bullet(self.enemy.x, self.enemy.y, angle, color=(255,0,0)))
+                        self.enemy_last_shot = shoot_event
             except queue.Empty:
                 pass
 
@@ -219,8 +223,6 @@ class Game:
         self.draw_text(f"health: {self.enemy.health}", self.enemy.x  - self.enemy.size, self.enemy.y - self.enemy.size)
 
     def stop_game(self):
-        print("stop")
-        self.running = False
         self.client.send_msg("remove room")
         self.interface.menu_lable.configure(text="Menu")
         self.interface.deiconify()
@@ -249,7 +251,7 @@ class Game:
                 if self.player.health > 0:
                     self.draw_self()
                 else:
-                    self.draw_text("You lost :(", WIDTH - 500, HEIGHT / 2, size=80)
+                    self.draw_text("You lost :(", WIDTH / 2, HEIGHT / 2, size=80)
                     self.end_game = True
 
                 self.draw_bullets()
@@ -257,7 +259,7 @@ class Game:
                 if self.enemy.health > 0:
                     self.draw_enemy()
                 else:
-                    self.draw_text("You win !", WIDTH - 500, 0, size=100)
+                    self.draw_text("You win !", WIDTH / 2, HEIGHT / 2, size=80)
                     self.end_game = True
                 
                 self.last_data = {
@@ -268,6 +270,11 @@ class Game:
                     "shoot_event": self.player.just_shot, 
                     "shoot_angle": self.player.last_shot_angle 
                 }
+                
+                try:
+                    self.send_queue.put_nowait(self.last_data)
+                except queue.Full:
+                    pass
 
                 self.player.just_shot = False
                 
