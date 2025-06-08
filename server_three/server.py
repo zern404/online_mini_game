@@ -53,7 +53,7 @@ class Server:
                     else:
                         self.clients.remove(client1)
                 except Exception:
-                    pass
+                    self.clients.remove(client1)
                 try:
                     client2 = next((c for c in self.clients if c["login"] == clients[1]), None)
                     if client2:
@@ -63,7 +63,7 @@ class Server:
                     else:
                         self.clients.remove(client2)
                 except Exception:
-                    pass
+                    self.clients.remove(client2)
                                 
                 self.rooms.remove(room)    
                 print(f"Room: {room["name"]} has removed")
@@ -120,10 +120,9 @@ class Server:
 
     def handle_client(self, conn, addr, login_data: dict):
         print(f"Connected {addr}:{login_data["login"]}")
-
-        client = {"addr": addr, "conn": conn, "in_room": False, "wait_room": False, "login": login_data["login"], "password": login_data["password"]}
-        
         conn.sendall("connected".encode())
+        
+        client = {"addr": addr, "conn": conn, "in_room": False, "wait_room": False, "login": login_data["login"], "password": login_data["password"]}
         self.clients.append(client)
 
         try:
@@ -139,7 +138,7 @@ class Server:
                     if decode_data == "ping":
                         conn.sendall("pong".encode())
 
-                    elif decode_data == "remove room":
+                    elif "remove room" in decode_data:
                         self.remove_room(client)
 
                     elif decode_data == "new room":

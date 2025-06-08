@@ -172,8 +172,9 @@ class Game:
             try:
                 stop = game_command_queue.get(timeout=1)
                 if "room closed" in stop:
-                    self.stop_game()
-                    break
+                    if self.running:
+                        self.stop_game()
+                        break
             except queue.Empty:
                 pass
 
@@ -247,7 +248,6 @@ class Game:
 
     def stop_game(self):
         print("stop")
-        self.client.send_msg("remove room")
         pygame.quit()
         self.running = False
         self.interface.deiconify()
@@ -314,4 +314,5 @@ class Game:
         except Exception as e:
             print(f"Error in game: {e}")
         finally:
+            self.__new_thread(self.client.send_msg, "remove room")
             self.stop_game()
