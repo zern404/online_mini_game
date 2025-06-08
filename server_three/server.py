@@ -44,21 +44,26 @@ class Server:
             if room:
                 clients = room["name"].split("|")
 
-                client1 = next((c for c in self.clients if c["login"] == clients[0]), None)
-                if client1:
-                    client1["in_room"] = False
-                    client1["wait_room"] = False
-                    room["conn1"].sendall("room closed".encode())
-                else:
-                    self.clients.remove(client1)
-
-                client2 = next((c for c in self.clients if c["login"] == clients[1]), None)
-                if client2:
-                    client2["in_room"] = False
-                    client2["wait_room"] = False
-                    room["conn2"].sendall("room closed".encode())
-                else:
-                    self.clients.remove(client2)
+                try:
+                    client1 = next((c for c in self.clients if c["login"] == clients[0]), None)
+                    if client1:
+                        client1["in_room"] = False
+                        client1["wait_room"] = False
+                        room["conn1"].sendall("room closed".encode())
+                    else:
+                        self.clients.remove(client1)
+                except Exception:
+                    pass
+                try:
+                    client2 = next((c for c in self.clients if c["login"] == clients[1]), None)
+                    if client2:
+                        client2["in_room"] = False
+                        client2["wait_room"] = False
+                        room["conn2"].sendall("room closed".encode())
+                    else:
+                        self.clients.remove(client2)
+                except Exception:
+                    pass
                                 
                 self.rooms.remove(room)    
                 print(f"Room: {room["name"]} has removed")

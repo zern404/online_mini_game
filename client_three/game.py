@@ -1,13 +1,19 @@
 import pygame
 import queue
-import sys
+import random
 import math
 import time
 from threading import Thread as t
-from client import data_queue, command_queue
+from client import data_queue, game_command_queue
 
 WIDTH, HEIGHT = 1000, 800
-game_data_queue = queue.Queue()
+
+headshot_music_path = "assets/sounds/headshot.mp3"
+invited_music_path = "assets/sounds/invited.mp3"
+
+def play_music(music_path):
+    pygame.mixer.music.load(music_path) 
+    pygame.mixer.music.play()  
 
 class Map:
     pass
@@ -119,11 +125,12 @@ class Player:
 
 class Game:
     WIDTH, HEIGHT = WIDTH, HEIGHT
-    def __init__(self, client=None, interface=None, singleplayer=True):
+    def __init__(self, login, enemy_login, client=None, interface=None, singleplayer=True):
         self.client = client
         self.interface = interface
         self.singleplayer = singleplayer
 
+        pygame.mixer.init()
         pygame.init()
         pygame.display.set_caption("Game")
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
@@ -131,6 +138,9 @@ class Game:
 
         self.running = True
         self.end_game = False
+
+        self.login = login
+        self.enemy_login = enemy_login
 
         self.threads = []
         self.last_data = None
@@ -140,46 +150,55 @@ class Game:
 
         self.damage_bullet = 10
 
-        self.player = Player(self.WIDTH / 2, 100)
-        self.enemy = Player(self.WIDTH / 2, 700 - 100, color=(200, 0, 0))
+        self.player = Player(random.randint(100, self.WIDTH - 100), random.randint(100, self.HEIGHT - 100))
+        self.enemy = Player(self.WIDTH / 2, self.HEIGHT / 2, color=(200, 0, 0))
 
-        self.__new_thread(self.update_data)
-        self.__new_thread(self.send_game_data)
+        self.enemy_target_x = self.enemy.x
+        self.enemy_target_y = self.enemy.y
+
+    def __kill_threads(self):
+        for thread in self.threads:
+            if thread.is_alive():
+                thread.join(timeout=1)  
+        self.threads.clear()
 
     def __new_thread(self, func, *args, **kwargs):
         thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
         self.threads.append(thread)
         thread.start()
     
+    def handle_stop(self):
+        while self.running:
+            try:
+                stop = game_command_queue.get(timeout=1)
+                if "room closed" in stop:
+                    self.stop_game()
+                    break
+            except queue.Empty:
+                pass
+
     def send_game_data(self):
         while self.running:
             if self.last_data is not None:
                 try:
-                    if "room closed" in self.last_data:
-                        self.stop_game()
-                        break
                     self.client.send_msg(self.last_data, True)
                 except Exception as e:
                     print(f"Send data error: {e}")
             time.sleep(1/60) 
 
     def update_data(self):
-        while True:
+        while self.running:
             try:
                 data = data_queue.get_nowait()
                 if data:
-                    if "room closed" in data:
-                        self.stop_game()
-                        break
-                    else:
-                        self.enemy.x = data["x"]
-                        self.enemy.y = data["y"]
-                        self.player.health = data["health"]
+                    self.enemy_target_x = data["x"]
+                    self.enemy_target_y = data["y"]
+                    self.player.health = data["health"]
 
-                        shoot_event = data.get("shoot_event", False)
-                        if shoot_event:
-                            angle = data.get("shoot_angle", 0)
-                            self.enemy_bullets.append(Bullet(self.enemy.x, self.enemy.y, angle, color=(255,0,0)))
+                    shoot_event = data.get("shoot_event", False)
+                    if shoot_event:
+                        angle = data.get("shoot_angle", 0)
+                        self.enemy_bullets.append(Bullet(self.enemy.x, self.enemy.y, angle, color=(255,0,0)))
             except queue.Empty:
                 pass
 
@@ -188,7 +207,11 @@ class Game:
         text_surface = font.render(text, True, color)
         self. screen.blit(text_surface, (x, y))
 
+    def hit_yourself(self):
+        self.player.health -= self.damage_bullet
+
     def hit(self):
+        play_music(headshot_music_path)
         self.enemy.health -= self.damage_bullet
 
     def draw_bullets(self):
@@ -209,36 +232,54 @@ class Game:
             dist = math.hypot(bullet.x - self.player.x, bullet.y - self.player.y)
             if dist < self.player.size // 2:
                 self.enemy_bullets.remove(bullet)
-                self.player.health -= self.damage_bullet
+                self.hit_yourself()
                 continue
             if not (0 <= bullet.x <= self.WIDTH and 0 <= bullet.y <= self.HEIGHT):
                 self.enemy_bullets.remove(bullet)
     
     def draw_enemy(self):
+        lerp = 0.2
+        self.enemy.x += (self.enemy_target_x - self.enemy.x) * lerp
+        self.enemy.y += (self.enemy_target_y - self.enemy.y) * lerp
         self.enemy.draw_player(self.screen)
+        self.draw_text(f"|{self.enemy_login}|", self.enemy.x  - self.enemy.size, self.enemy.y - self.enemy.size - 20, color=(255, 0, 255))
         self.draw_text(f"health: {self.enemy.health}", self.enemy.x  - self.enemy.size, self.enemy.y - self.enemy.size)
 
     def stop_game(self):
         print("stop")
-        self.running = False
         self.client.send_msg("remove room")
-        self.interface.menu_lable.configure(text="Menu")
-        self.interface.deiconify()
         pygame.quit()
-        sys.exit()
+        self.running = False
+        self.interface.deiconify()
+        self.interface.menu_lable.configure(text="Menu")
 
     def draw_self(self):
         self.player.handle_mouse()
         self.player.handle_keys(self.bullets)
 
+        self.draw_text(f"|{self.login}|", self.player.x  - self.player.size, self.player.y - self.player.size - 40, color=(255, 0, 255))
         self.draw_text(f"ammo: {self.player.bullet}", self.player.x  - self.player.size, self.player.y - self.player.size - 20)
         self.draw_text(f"health: {self.player.health}", self.player.x  - self.player.size, self.player.y - self.player.size)
 
         self.player.draw_sight(self.screen)
         self.player.draw_player(self.screen)
 
+    def generate_last_data(self):
+        self.last_data = {
+                "x": self.player.x,
+                "y": self.player.y,
+                "health": self.enemy.health,
+                "bullet": self.player.bullet,
+                "shoot_event": self.player.just_shot, 
+                "shoot_angle": self.player.last_shot_angle 
+            }
+
     def run(self):
         try:
+            self.__new_thread(self.update_data)
+            self.__new_thread(self.send_game_data)
+            self.__new_thread(self.handle_stop)
+            play_music(invited_music_path)
             while self.running:
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -249,7 +290,7 @@ class Game:
                 if self.player.health > 0:
                     self.draw_self()
                 else:
-                    self.draw_text("You lost :(", WIDTH - 500, HEIGHT / 2, size=80)
+                    self.draw_text("You lost :(", WIDTH / 2, HEIGHT / 2, size=100)
                     self.end_game = True
 
                 self.draw_bullets()
@@ -257,18 +298,10 @@ class Game:
                 if self.enemy.health > 0:
                     self.draw_enemy()
                 else:
-                    self.draw_text("You win !", WIDTH - 500, 0, size=100)
+                    self.draw_text("You win !", WIDTH / 2, HEIGHT / 2, size=100)
                     self.end_game = True
-                
-                self.last_data = {
-                    "x": self.player.x,
-                    "y": self.player.y,
-                    "health": self.enemy.health,
-                    "bullet": self.player.bullet,
-                    "shoot_event": self.player.just_shot, 
-                    "shoot_angle": self.player.last_shot_angle 
-                }
 
+                self.generate_last_data()
                 self.player.just_shot = False
                 
                 pygame.display.flip()

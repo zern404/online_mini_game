@@ -20,70 +20,25 @@ class MainMenu(ctk.CTk):
         self.resizable(False, False)
 
         self.threads = []
+        self.not_game = True
         self.status_connect = False
 
         self.status_ping_pong = False
         self.ping_ms = None
-
-        self.byte_login_data = self.read_login_data()
-
-        self.cl = Client()
 
         self.main_frame = ctk.CTkFrame(self, width=600, height=500)
         self.main_frame.pack(fill="both", expand=True)
 
         self.conn_lable = ctk.CTkLabel(self.main_frame, text_color="red", text="🔴 Not connected 🔴", font=("Bold", 30)) 
         self.ping_label = ctk.CTkLabel(self.main_frame, text="", font=("Bold", 20))
+        
+        self.byte_login_data = self.read_login_data()
+        self.enemy_login = None
+        self.cl = Client()
 
         self.__new_thread(self.check_status_connect)
         self.__new_thread(self.update_ping)
         self.start()
-
-    def __new_thread(self, func, *args, **kwargs):
-        thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
-        self.threads.append(thread)
-        thread.start()
-    
-    def __kill_threads(self):
-        for thread in self.threads:
-            if thread.is_alive():
-                if not thread.daemon:
-                    thread.join(timeout=2)  
-        self.threads.clear()
-
-    def start(self):
-        if os.path.exists(LOGIN_DATA_PATH):
-            if self.status_connect != True:
-                self.__new_thread(self.cl.connect_server, self.byte_login_data)
-            self.draw_menu()
-        else:
-            self.draw_login()
-
-    def check_status_connect(self):
-        while True:
-            try:
-                try:
-                    command = command_queue.get(timeout=1)
-                    if command == "connected":
-                        self.status_connect = True
-                        self.conn_lable.configure(text_color="green", text="✅ Connected ✅")
-                    elif command == "start game":
-                        self.__new_thread(self.start_game)
-                    elif command == "disconnected":
-                        self.status_connect = False
-                        self.conn_lable.configure(text_color="red", text="🔴 Not connected 🔴")
-                except queue.Empty:
-                    pass
-                try:
-                    interface_command = interface_queue.get(timeout=1)
-                    if interface_command == "restart":
-                        self.cl.stop_client()
-                        self.main_frame.destroy()
-                        self.start()
-                except queue.Empty:
-                    pass
-            except Exception as e:
-                print(f"Error in check status {e}")
 
     def draw_login(self):
         self.login_lable = ctk.CTkLabel(self.main_frame, text="Login", font=("Bold", 50))
@@ -124,23 +79,73 @@ class MainMenu(ctk.CTk):
         with open(LOGIN_DATA_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
+    def __new_thread(self, func, *args, **kwargs):
+        thread = t(target=func, args=args, kwargs=kwargs, daemon=True)
+        self.threads.append(thread)
+        thread.start()
+    
+    def __kill_threads(self):
+        for thread in self.threads:
+            if thread.is_alive():
+                if not thread.daemon:
+                    thread.join(timeout=2)  
+        self.threads.clear()
+
+    def start(self):
+        if os.path.exists(LOGIN_DATA_PATH):
+            if self.status_connect != True:
+                self.__new_thread(self.cl.connect_server, self.byte_login_data)
+            self.draw_menu()
+        else:
+            self.draw_login()
+
+    def check_status_connect(self):
+        while True:
+            try:
+                try:
+                    command = command_queue.get(timeout=1)
+                    if command == "connected":
+                        self.status_connect = True
+                        self.conn_lable.configure(text_color="green", text="✅ Connected ✅")
+                    elif "room found!" in command:
+                        self.enemy_login = command.split(":")[1]
+                    elif command == "start game":
+                        self.not_game = False
+                        self.__new_thread(self.start_game, self.byte_login_data.decode(), self.enemy_login)
+                    elif command == "disconnected":
+                        self.status_connect = False
+                        self.conn_lable.configure(text_color="red", text="🔴 Not connected 🔴")
+                except queue.Empty:
+                    pass
+                try:
+                    interface_command = interface_queue.get(timeout=1)
+                    if interface_command == "restart":
+                        self.cl.stop_client()
+                        self.main_frame.destroy()
+                        self.start()
+                except queue.Empty:
+                    pass
+            except Exception as e:
+                print(f"Error in check status {e}")
+
     def update_ping(self):
-        if self.status_connect:
-            ping = self.cl.ping() 
-            if ping is not None:
-                self.ping_ms = ping
-                self.status_ping_pong = True
-                if ping >= 120:
-                    self.ping_label.configure(text_color="yellow", text=f"Ping: {ping} ms")
+        if self.not_game:
+            if self.status_connect:
+                ping = self.cl.ping() 
+                if ping is not None:
+                    self.ping_ms = ping
+                    self.status_ping_pong = True
+                    if ping >= 120:
+                        self.ping_label.configure(text_color="yellow", text=f"Ping: {ping} ms")
+                    else:
+                        self.ping_label.configure(text_color="green", text=f"Ping: {ping} ms")
                 else:
-                    self.ping_label.configure(text_color="green", text=f"Ping: {ping} ms")
+                    self.status_ping_pong = False
+                    self.ping_label.configure(text_color="red", text="Ping timeout")
             else:
                 self.status_ping_pong = False
-                self.ping_label.configure(text_color="red", text="Ping timeout")
-        else:
-            self.status_ping_pong = False
-            self.ping_label.configure(text_color="red", text="")
-        self.after(3000, self.update_ping)
+                self.ping_label.configure(text_color="red", text="")
+            self.after(3000, self.update_ping)
 
     def read_login_data(self):
         try:
@@ -175,13 +180,10 @@ class MainMenu(ctk.CTk):
         self.cl.send_msg("new room")
         self.menu_lable.configure(text="Search room...")        
        
-    def start_game(self):
+    def start_game(self, login, enemy_login):
         self.withdraw()
-        self.game = Game(self.cl, self, False)
+        self.game = Game(json.loads(login)["login"], enemy_login, self.cl, self, False)
         self.game.run()
-        self.game.stop_game()
-        self.g = Game(self.cl, self, False)
-        self.g.run()
 
 
 MainMenu().mainloop()

@@ -5,8 +5,10 @@ import json
 from functools import wraps
 from threading import Thread as t
 
-IP, PORT = "localhost", 6000
+IP, PORT = "est-bits.gl.at.ply.gg", 3636
 
+interface_queue = queue.Queue()
+game_command_queue = queue.Queue()
 command_queue = queue.Queue()
 data_queue = queue.Queue()
 ping_queue = queue.Queue()
@@ -95,20 +97,24 @@ class Client:
                     elif "pong" in decode_data:
                         ping_queue.put("pong")
                     elif "room found!" in decode_data:
+                        command_queue.put(decode_data)
                         self.send_msg("ready")
-                    elif "room found!" in decode_data:
-                        self.send_msg("ready")
+                    elif "restart" in decode_data:
+                        interface_queue.put("restart")
                     elif "start game" in decode_data:
                         command_queue.put(decode_data)
+                    elif "room closed" in decode_data:
+                        game_command_queue.put(decode_data)
                     else:
                         self._json_buffer += decode_data
                         while "\n" in self._json_buffer:
                             line, self._json_buffer = self._json_buffer.split("\n", 1)
-                            if line.strip():
+                            line = line.strip()
+                            if line:
                                 try:
                                     data_queue.put(json.loads(line))
                                 except Exception as e:
-                                    print(f"decode error: {e}")
+                                    print(f"decode error: {e} | line: {line!r}")
                         
         except Exception as e:
             print(f"Error in handle server: {e}")
